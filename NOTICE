@@ -1,0 +1,14 @@
+ClickGotchi
+
+ClickGotchi is a RockBox plugin for the iPod Video 5.5G. It is a port of the CYDgotchi
+pet, which lives in the LoRagotchi-DX project.
+
+Parts taken from LoRagotchi-DX (MIT License, Copyright (c) 2025 Scott Powell / rippleradios.com;
+Copyright (c) 2026 Robert Rayner / M0YNW, LoRaGotchi DX modifications):
+  - sprite masks, colours, scenery, egg/hatch/memorial art
+  - care rules (happiness, waste, cleaning, life stages)
+  - the tropical fish mask, generated from examples/cyd_pet/CydSplashArt.h
+    (tools/fish/generate_tropical_mask.py)
+
+The plugin itself is GPL-2.0-or-later, like the RockBox plugins it is built with. See LICENSE.
+RockBox is a separate project: https://www.rockbox.org (source: https://github.com/Rockbox/rockbox).

@@ -1,0 +1,7 @@
+# built plugin and build output
+*.rock
+*.o
+*.d
+build/
+# local scratch
+__pycache__/

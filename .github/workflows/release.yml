@@ -1,0 +1,49 @@
+name: Release ClickGotchi .rock
+
+# Push a tag starting with "v" (for example v0.1) to build clickgotchi.rock and publish it as a GitHub release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi make gcc g++ git
+
+      - name: Build clickgotchi.rock (IPOD_VIDEO, RockBox v4.0-final)
+        run: |
+          mkdir -p dist
+          tools/build-rock.sh dist
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          flags=()
+          case "$tag" in v0.*) flags+=(--prerelease) ;; esac
+          cd dist
+          sha256sum clickgotchi.rock > clickgotchi.rock.sha256
+          cd ..
+          gh release create "$tag" dist/clickgotchi.rock dist/clickgotchi.rock.sha256 \
+            --title "ClickGotchi $tag" --generate-notes "${flags[@]}"
+
+      - name: Keep the build for manual runs
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: clickgotchi-rock
+          path: dist/clickgotchi.rock
+          retention-days: 14
