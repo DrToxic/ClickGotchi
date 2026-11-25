@@ -7,7 +7,8 @@ set -euo pipefail
 
 ROCKBOX_TAG=${ROCKBOX_TAG:-v4.0-final}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
-OUT=${1:-$HERE}
+mkdir -p "${1:-$HERE}"
+OUT=$(cd "${1:-$HERE}" && pwd)   # absolute: the script changes directory below
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -24,6 +25,5 @@ mkdir "$WORK/build" && cd "$WORK/build"
   || { cat configure.log; exit 1; }
 make "$WORK/build/apps/plugins/clickgotchi.rock"
 
-mkdir -p "$OUT"
 cp "$WORK/build/apps/plugins/clickgotchi.rock" "$OUT/clickgotchi.rock"
 sha256sum "$OUT/clickgotchi.rock"
