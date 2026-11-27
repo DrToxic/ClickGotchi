@@ -21,7 +21,8 @@
  *     the pet wanders with a small, simpler motion model
  *
  * What the pet reacts to:
- *   - clock (RTC): asleep between 22:00 and 07:00 (option), no decay while asleep
+ *   - clock (RTC): asleep between the Sleep time and Wake time (Options; equal times = never asleep),
+ *     no decay while asleep
  *   - charger: the pet rests while the iPod charges (no decay), if Rest while charging is Yes (default)
  *   - battery: at 20% or less (not charging) the pet is tired and stays put
  *   - USB: plugging in USB saves and quits, as in the baseline
@@ -65,7 +66,10 @@
  * ---------------------------------------------------------------------- */
 static bool show_seconds = true;
 static bool keep_backlight_on_usb = true;
-static bool night_sleep = true;       /* pet sleeps 22:00-07:00 by the RTC */
+/* Sleep and Wake, whole hours 0-23, the radio's Schedule rule: the pet sleeps from sleep_hour to
+ * wake_hour (wrapping past midnight), and sleep_hour == wake_hour means never asleep. */
+static int sleep_hour = 22;
+static int wake_hour = 7;
 static bool rest_while_charging = true; /* pet rests while the iPod charges (optional, owner 2026-11-25) */
 /* Speed, as the radio's Rendering setting: 0 Smooth (~30 fps), 1 Simulation (10 fps), 2 Efficient 1 FPS */
 static int render_speed = 0;
@@ -75,7 +79,8 @@ static bool music_reactive = false;  /* music keeps the pet awake and shows a st
 static struct configdata config[] = {
     {TYPE_BOOL, 0, 1, { .bool_p = &show_seconds },           "show_seconds",           NULL},
     {TYPE_BOOL, 0, 1, { .bool_p = &keep_backlight_on_usb },  "keep_backlight_on_usb",  NULL},
-    {TYPE_BOOL, 0, 1, { .bool_p = &night_sleep },            "night_sleep",            NULL},
+    {TYPE_INT,  0, 23, { .int_p  = &sleep_hour },            "sleep_hour",             NULL},
+    {TYPE_INT,  0, 23, { .int_p  = &wake_hour },             "wake_hour",              NULL},
     {TYPE_BOOL, 0, 1, { .bool_p = &rest_while_charging },    "rest_while_charging",    NULL},
     {TYPE_INT,  0, 2, { .int_p  = &render_speed },           "render_speed",           NULL},
     {TYPE_BOOL, 0, 1, { .bool_p = &music_reactive },         "music_reactive",         NULL},
@@ -842,7 +847,10 @@ static bool clock_is_set(const struct tm *t)
 
 static bool night_now(const struct tm *t)
 {
-    return night_sleep && clock_is_set(t) && (t->tm_hour >= 22 || t->tm_hour < 7);
+    int h = t->tm_hour;
+    if (!clock_is_set(t) || sleep_hour == wake_hour) return false;
+    return sleep_hour > wake_hour ? (h >= sleep_hour || h < wake_hour)
+                                  : (h >= sleep_hour && h < wake_hour);
 }
 
 struct env {
@@ -1964,23 +1972,40 @@ static void rename_pet(void)
 }
 
 /* ---- Options: a list screen (SELECT toggles or opens, CANCEL goes back) ---- */
-enum { OPT_SECONDS, OPT_BACKLIGHT, OPT_NIGHT, OPT_CHARGE, OPT_SPEED, OPT_MUSIC, OPT_RENAME, OPT_RESET, OPT_COUNT };
+enum { OPT_SECONDS, OPT_BACKLIGHT, OPT_SLEEP, OPT_WAKE, OPT_CHARGE, OPT_SPEED, OPT_MUSIC, OPT_RENAME, OPT_RESET, OPT_COUNT };
 static const char *const speed_names[3] = { "Smooth", "Simulation", "Efficient 1 FPS" };
+
+/* RockBox's own Yes/No strings, so the options follow the firmware language */
+static const char *yes_no(bool v) { return rb->str(v ? LANG_SET_BOOL_YES : LANG_SET_BOOL_NO); }
 
 static const char *options_row(int item, void *data, char *buf, size_t len)
 {
     (void)data;
     switch (item) {
-    case OPT_SECONDS:   rb->snprintf(buf, len, "Show seconds: %s", show_seconds ? "Yes" : "No"); break;
-    case OPT_BACKLIGHT: rb->snprintf(buf, len, "Keep backlight on USB: %s", keep_backlight_on_usb ? "Yes" : "No"); break;
-    case OPT_NIGHT:     rb->snprintf(buf, len, "Sleep 22:00-07:00: %s", night_sleep ? "Yes" : "No"); break;
-    case OPT_CHARGE:    rb->snprintf(buf, len, "Rest while charging: %s", rest_while_charging ? "Yes" : "No"); break;
+    case OPT_SECONDS:   rb->snprintf(buf, len, "Show seconds: %s", yes_no(show_seconds)); break;
+    case OPT_BACKLIGHT: rb->snprintf(buf, len, "Keep backlight on USB: %s", yes_no(keep_backlight_on_usb)); break;
+    case OPT_SLEEP:     rb->snprintf(buf, len, "Sleep time: %02d:00%s", sleep_hour, sleep_hour == wake_hour ? " (off)" : ""); break;
+    case OPT_WAKE:      rb->snprintf(buf, len, "Wake time: %02d:00", wake_hour); break;
+    case OPT_CHARGE:    rb->snprintf(buf, len, "Rest while charging: %s", yes_no(rest_while_charging)); break;
     case OPT_SPEED:     rb->snprintf(buf, len, "Speed: %s", speed_names[render_speed]); break;
-    case OPT_MUSIC:     rb->snprintf(buf, len, "Music reactive: %s", music_reactive ? "Yes" : "No"); break;
+    case OPT_MUSIC:     rb->snprintf(buf, len, "Music reactive: %s", yes_no(music_reactive)); break;
     case OPT_RENAME:    return "Change pet name";
     default:            return "Reset pet";
     }
     return buf;
+}
+
+/* RockBox's own number picker, 00:00-23:00 in whole hours */
+static const char *hour_text(char *buf, size_t len, int hour, const char *unit)
+{
+    (void)unit;
+    rb->snprintf(buf, len, "%02d:00", hour);
+    return buf;
+}
+
+static void set_hour(const char *label, int *hour)
+{
+    rb->set_int((const unsigned char *)label, "", UNIT_INT, hour, NULL, 1, 0, 23, hour_text);
 }
 
 static void options_menu(void)
@@ -1992,7 +2017,8 @@ static void options_menu(void)
         switch (r) {
         case OPT_SECONDS:   show_seconds = !show_seconds; break;
         case OPT_BACKLIGHT: keep_backlight_on_usb = !keep_backlight_on_usb; break;
-        case OPT_NIGHT:     night_sleep = !night_sleep; break;
+        case OPT_SLEEP:     set_hour("Sleep time", &sleep_hour); break;
+        case OPT_WAKE:      set_hour("Wake time", &wake_hour); break;
         case OPT_CHARGE:    rest_while_charging = !rest_while_charging; break;
         case OPT_SPEED:     render_speed = (render_speed + 1) % 3; break;
         case OPT_MUSIC:     music_reactive = !music_reactive; break;
@@ -2041,7 +2067,7 @@ static bool care_menu(bool *usb)
     int r;
     MENUITEM_STRINGLIST(menu, "ClickGotchi", NULL,
                         "Resume", "Feed", "Clean up", "Fertilise (lay an egg)", "Pet info",
-                        "Options", "Quit");
+                        "Options", ID2P(LANG_MENU_QUIT));
     r = rb->do_menu(&menu, &sel, NULL, false);
 /* a USB plug during the menu makes do_menu return a negative code (MENU_ATTACHED_USB) and eats the event */
     if (r < 0 && rb->usb_inserted()) { *usb = true; return true; }
